@@ -1,8 +1,10 @@
+#include <cstdint>
 #include <iostream>
 #include <chrono>
 #include <ostream>
 #include <queue>
 #include <string>
+#include <sys/types.h>
 #include <unordered_map>
 #include <vector>
 
@@ -47,19 +49,19 @@ typedef struct Vector2 {
 
 vector<string> maze = {
      "#####################",
-     "#S    #       #     #",
+     "#     #       #     #",
      "##### ### ##### # ###",
      "#   #   # #   # #   #",
      "# ##### # # # # ### #",
      "#     # #   #   #   #",
      "# ### # ######### ###",
-     "#   #   #       #   #",
-     "### ##### ##### # # #",
+     "#   #   #......     #",
+     "### # ###.##### # # #",
      "# # #     #   # #E# #",
-    "# # # ### # # # ### #",
-    "#   #   # # # #     #",
-    "# ### ### # # ##### #",
-    "# # # #   # #     # #",
+    "# # # ### ##### ### #",
+    "#   #   #       #   #",
+    "# ### ############# #",
+    "# #S# #   # #     # #",
     "# # # # ### ### ### #",
     "# #   #   #   #   # #",
     "# ##### # ### ### # #",
@@ -72,6 +74,7 @@ vector<string> maze = {
 typedef struct Node {
 	Vector2 position;
 	vector<const Node*> neighbors;
+
 	Node() : position(ZERO), neighbors() {};
 	Node(Vector2 pos) : position(pos), neighbors() {};
 
@@ -97,6 +100,25 @@ typedef struct Node {
 	}
 } Node;
 
+typedef struct PriorityQueue {
+	typedef std::pair<uint64_t, Node> Element;
+	std::priority_queue<Element, std::vector<Element>, decltype([] (const Element& a, const Element& b) { return a.first > b.first; })> elements;
+
+	inline bool empty() const {
+		return elements.empty();
+	}
+
+	inline void put(Node item, uint64_t priority) {
+		elements.emplace(priority, item);
+	}
+
+	Node get() {
+		Node best_item = elements.top().second;
+		elements.pop();
+		return best_item;
+	}
+} PriorityQueue;
+
 namespace std {
 template <> struct hash<Vector2> {
 	std::size_t operator()(const Vector2& id) const noexcept {
@@ -115,24 +137,41 @@ static auto& get(vector<T>& vec, Vector2 pos) {
 	return vec[pos.y][pos.x];
 }
 
+static uint64_t tileCost(const Vector2 pos) {
+	switch (get(maze, pos)) {
+		case ' ':
+			return 1;
+		case '.':
+			return 2;
+		case 'E':
+			return 0;
+		default:
+			cout << "Uncached" << get(maze, pos) << endl;
+			return 1;
+	}
+}
+
 unordered_map<Node, Node> BFD(vector<Node>& nodes, Node& start, Node& end) {
-	queue<Node> frontier;
-	frontier.emplace(start);
+	PriorityQueue frontier;
+	frontier.put(start, 1);
 	unordered_map<Node, Node> outPath;
 	outPath[start] = start;
+	unordered_map<Node, uint64_t> costs;
+	costs[start] = 1;
 
 	while (!frontier.empty()) {
-		auto node = frontier.front();
-		frontier.pop();
+		auto node = frontier.get();
 
 		if (node == end) {
 			break;
 		}
 
 		for (const Node* neighbor : node.neighbors) {
-			if (!outPath.contains(*neighbor)) {
+			const uint64_t newCost = costs[node] + tileCost(neighbor->position);
+			if (!outPath.contains(*neighbor) || newCost < costs[*neighbor]) {
+				costs[*neighbor] = newCost;
 				outPath[*neighbor] = node;
-				frontier.emplace(*neighbor);
+				frontier.put(*neighbor, newCost);
 			}
 		}
 	}
@@ -164,9 +203,6 @@ void populate(Node& node, const vector<Node>& nodes) {
 	}
 }
 
-// | |
-// (0, 0) (1, 0)
-
 const char direction(const Node& node, const Node& direction) {
 	 static unordered_map<Vector2, char> dirMap = {
 		{UP, '^'}, 
@@ -186,7 +222,8 @@ const string beutify(const char& c) {
 		 {'^', "↑"},
 		 {'S', "\x1B[33m⛌\033[0m"},
 		 {'D', "\x1B[33m★\033[0m"},
-		 {' ', " "}
+		 {' ', " "},
+		 {'.', " "}
 	};
 	return charMap[c];
 }
